@@ -4,16 +4,27 @@ import { colors, config } from "./deps.ts";
 
 if (import.meta.main) {
   const streamNames = ["kirinokirino"];
-  const liveStreams = await getTwitchStreams(streamNames);
+
+  const liveStreams: liveStreamInfo[] = [];
+  for (let i = 0; i < streamNames.length; i += 10) {
+    liveStreams.concat(await getTwitchStreams(streamNames.slice(i, i + 9)));
+  }
 
   if (liveStreams.length < 1) console.log("Currently noone is streaming :(");
   else {
     for (const stream of liveStreams) {
-      console.log(
-        colors.red(colors.bold(stream.display_name)) + " is playing " +
-          colors.black(colors.bold(stream.game)) + " with " +
-          colors.blue(String(stream.viewers)) + " viewers.",
-      );
+      if (stream.game !== undefined) {
+        console.log(
+          colors.red(colors.bold(stream.display_name)) + " is playing " +
+            colors.black(colors.bold(stream.game)) + " with " +
+            colors.blue(String(stream.viewers)) + " viewers.",
+        );
+      } else {
+        console.log(
+          colors.red(colors.bold(stream.display_name)) + " is doing something with " +
+            colors.blue(String(stream.viewers)) + " viewers.",
+        );
+      }
       console.log(colors.bold(stream.url));
       console.log(stream.status);
       console.log("");
@@ -24,9 +35,9 @@ if (import.meta.main) {
 interface liveStreamInfo {
   // deno-lint-ignore camelcase
   display_name: string;
-  game: string;
+  game?: string;
   viewers: number;
-  status: string;
+  status?: string;
   url: string;
   // deno-lint-ignore camelcase
   stream_type: string;
