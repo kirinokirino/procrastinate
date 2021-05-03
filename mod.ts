@@ -1,13 +1,15 @@
-#!/usr/bin/env -S deno run --no-check --allow-read=.env,.env.defaults --allow-net=api.twitch.tv
+#!/usr/bin/env -S deno run --no-check --allow-read=.env,.env.defaults,. --allow-net=api.twitch.tv
 
-import { colors, config } from "./deps.ts";
+import { colors, config, path } from "./deps.ts";
 
 if (import.meta.main) {
   const streamNames = ["kirinokirino"];
 
-  const liveStreams: liveStreamInfo[] = [];
+  let liveStreams: liveStreamInfo[] = [];
   for (let i = 0; i < streamNames.length; i += 10) {
-    liveStreams.concat(await getTwitchStreams(streamNames.slice(i, i + 9)));
+    liveStreams = liveStreams.concat(
+      await getTwitchStreams(streamNames.slice(i, i + 9)),
+    );
   }
 
   if (liveStreams.length < 1) console.log("Currently noone is streaming :(");
@@ -21,7 +23,8 @@ if (import.meta.main) {
         );
       } else {
         console.log(
-          colors.red(colors.bold(stream.display_name)) + " is doing something with " +
+          colors.red(colors.bold(stream.display_name)) +
+            " is doing something with " +
             colors.blue(String(stream.viewers)) + " viewers.",
         );
       }
@@ -45,7 +48,9 @@ interface liveStreamInfo {
 
 // Get streams
 async function getTwitchStreams(channels: string[]): Promise<liveStreamInfo[]> {
-  const appClientID = config().appClientID;
+  const dir = Deno.mainModule.split(path.sep).slice(1, -1).join(path.sep);
+  const p = path.join(dir, ".env");
+  const appClientID = config({ path: p }).appClientID;
   const acceptVersion = "application/vnd.twitchtv.v5+json";
   const ids = await getTwitchIds(appClientID, channels);
   if (ids.length < 1) throw Error("Got no ids!");
