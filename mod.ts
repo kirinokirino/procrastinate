@@ -5,12 +5,7 @@ import { colors, config, path } from "./deps.ts";
 if (import.meta.main) {
   const streamNames = ["kirinokirino"];
 
-  let liveStreams: liveStreamInfo[] = [];
-  for (let i = 0; i < streamNames.length; i += 10) {
-    liveStreams = liveStreams.concat(
-      await getTwitchStreams(streamNames.slice(i, i + 9)),
-    );
-  }
+  const liveStreams: liveStreamInfo[] = await getTwitchStreamsByIds(streamNames);
 
   if (liveStreams.length < 1) console.log("Currently noone is streaming :(");
   else {
@@ -47,42 +42,59 @@ interface liveStreamInfo {
 }
 
 // Get streams
-async function getTwitchStreams(channels: string[]): Promise<liveStreamInfo[]> {
+async function getTwitchStreamsByIds(channels: string[]): Promise<liveStreamInfo[]> {
   const dir = Deno.mainModule.split(path.sep).slice(1, -1).join(path.sep);
   const p = path.join(dir, ".env");
   const appClientID = config({ path: p }).appClientID;
   const acceptVersion = "application/vnd.twitchtv.v5+json";
   const ids = await getTwitchIds(appClientID, channels);
   if (ids.length < 1) throw Error("Got no ids!");
-  const url = "https://api.twitch.tv/kraken/streams?limit=100&channel=" + ids;
 
-  const liveStreams: liveStreamInfo[] = await fetch(url, {
-    headers: {
-      "Client-ID": appClientID,
-      "Accept": acceptVersion,
-      "Content-Type": "application/json",
-    },
-  }).then(function (response) {
-    return response.json();
-  }).then(function (json) {
-    const liveStreams = [];
-    for (const stream of json.streams) {
-      if (stream.stream_type === "live") {
-        liveStreams.push({
-          display_name: stream.channel.display_name,
-          game: stream.game,
-          viewers: stream.viewers,
-          status: stream.channel.status,
-          url: stream.channel.url,
-          stream_type: stream.stream_type,
-        } as liveStreamInfo);
+  var urls: string[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    urls.push(
+      "https://api.twitch.tv/kraken/streams?limit=100&channel=" +
+        ids.slice(i, i + 99),
+    );
+  }
+
+  var liveStreams: liveStreamInfo[] = [];
+  while (true) {
+    const url = urls.pop();
+    if (typeof url === "undefined") break;
+    liveStreams = liveStreams.concat(
+      await fetch(url, {
+        headers: {
+          "Client-ID": appClientID,
+          "Accept": acceptVersion,
+          "Content-Type": "application/json",
+        },
+      }).then(function (response) {
+      if (response.status !== 200) {
+        throw Error(response.status + ": " + response.statusText);
       }
-    }
-    return liveStreams;
-  }).catch(function (exception) {
-    console.log("parsing failed", exception);
-    return [];
-  });
+        return response.json();
+      }).then(function (json) {
+        const liveStreams = [];
+        for (const stream of json.streams) {
+          if (stream.stream_type === "live") {
+            liveStreams.push({
+              display_name: stream.channel.display_name,
+              game: stream.game,
+              viewers: stream.viewers,
+              status: stream.channel.status,
+              url: stream.channel.url,
+              stream_type: stream.stream_type,
+            } as liveStreamInfo);
+          }
+        }
+        return liveStreams;
+      }).catch(function (exception) {
+        console.log("parsing failed", exception);
+        return [];
+      }),
+    );
+  }
   return liveStreams;
 }
 
@@ -93,25 +105,38 @@ async function getTwitchIds(
 ): Promise<string[]> {
   const acceptVersion = "application/vnd.twitchtv.v5+json";
   if (channels.length < 1) channels.push("kirinokirino"); // Kappa
-  var url = "https://api.twitch.tv/kraken/users/?login=" + channels;
+  var urls: string[] = [];
+  for (let i = 0; i < channels.length; i += 100) {
+    urls.push(
+      "https://api.twitch.tv/kraken/users/?login=" + channels.slice(i, i + 99),
+    );
+  }
 
-  const ids: string[] = await fetch(url, {
-    headers: {
-      "Client-ID": appClientID,
-      "Accept": acceptVersion,
-      "Content-Type": "application/json",
-    },
-  }).then(function (response) {
-    return response.json();
-  }).then(function (json) {
-    const ids: string[] = [];
-    for (const user of json.users) {
-      ids.push(user._id as string);
-    }
-    return ids;
-  }).catch(function (exception) {
-    console.error("parsing failed", exception);
-    return [];
-  });
+  var ids: string[] = [];
+  while (true) {
+    const url = urls.pop();
+    if (typeof url === "undefined") break;
+    const newIds = await fetch(url, {
+      headers: {
+        "Client-ID": appClientID,
+        "Accept": acceptVersion,
+        "Content-Type": "application/json",
+      },
+    }).then(function (response) {
+      if (response.status !== 200) {
+        throw Error(response.status + ": " + response.statusText);
+      }
+      return response.json();
+    }).then(function (json) {
+      const ids: string[] = [];
+      for (const user of json.users) {
+        ids.push(user._id as string);
+      }
+      return ids;
+    });
+
+    ids = ids.concat(newIds);
+  }
+
   return ids;
 }
