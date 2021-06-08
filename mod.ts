@@ -5,8 +5,39 @@ import { colors, config, path } from "./deps.ts";
 if (import.meta.main) {
   const streamNames = ["kirinokirino"];
 
-  const liveStreams: liveStreamInfo[] = await getTwitchStreamsByIds(streamNames);
+  const dir = Deno.mainModule.split(path.sep).slice(1, -1).join(path.sep);
+  const p = path.join(dir, ".env");
+  const appClientID = config({ path: p }).appClientID;
 
+  var liveStreams: liveStreamInfo[];
+  if (Deno.args[0] === "--help" || Deno.args[0] === "-h") {
+    console.log(`
+procrastinate
+USAGE:
+  ./mod.ts [FLAGS][OPTIONS]
+FLAGS:
+  -h, --help            Prints help information
+OPTIONS:
+  game [game]           Searches streams by the game
+  lang [language]       Searches streams by the language
+DEFAULT:
+  uses internal StreamNames variable to query twitch if specific channels are streaming.
+    `)
+    Deno.exit();
+  } else if (Deno.args[0] === "game" && Deno.args[1] && !Deno.args[2] ) {
+    liveStreams = await getStreams(appClientID, Deno.args[1]);
+  } else if (Deno.args[0] === "lang" && Deno.args[1] && !Deno.args[2] ) {
+    liveStreams = await getStreams(appClientID, undefined, Deno.args[1]);
+  } else if (Deno.args[0] === "lang" && Deno.args[1] && Deno.args[2] === "game" && Deno.args[3]) {
+    liveStreams = await getStreams(appClientID, Deno.args[3], Deno.args[1]);
+  } else if (Deno.args[0] === "game" && Deno.args[1] && Deno.args[2] === "lang" && Deno.args[3]) {
+    liveStreams = await getStreams(appClientID, Deno.args[1], Deno.args[3]);
+  } else {
+    liveStreams = await getTwitchStreamsByIds(
+      appClientID,
+      streamNames,
+    );
+  }
   if (liveStreams.length < 1) console.log("Currently noone is streaming :(");
   else {
     for (const stream of liveStreams) {
@@ -41,11 +72,58 @@ interface liveStreamInfo {
   stream_type: string;
 }
 
-// Get streams
-async function getTwitchStreamsByIds(channels: string[]): Promise<liveStreamInfo[]> {
-  const dir = Deno.mainModule.split(path.sep).slice(1, -1).join(path.sep);
-  const p = path.join(dir, ".env");
-  const appClientID = config({ path: p }).appClientID;
+// Generic get streams function
+async function getStreams(
+  appClientID: string,
+  game?: string,
+  language?: string,
+  page?: number,
+): Promise<liveStreamInfo[]> {
+  const acceptVersion = "application/vnd.twitchtv.v5+json";
+  const gameParameter = game ? "game=" + game : "";
+  const languageParameter = language ? "language=" + language : "";
+  const offsetParameter = page ? "offset=" + page * 100 : "";
+  const parameters = [gameParameter, languageParameter, offsetParameter];
+  const url =
+    "https://api.twitch.tv/kraken/streams?limit=100&stream_type=live&" +
+    parameters.join("&");
+  return await fetch(url, {
+    headers: {
+      "Client-ID": appClientID,
+      "Accept": acceptVersion,
+      "Content-Type": "application/json",
+    },
+  }).then(function (response) {
+    if (response.status !== 200) {
+      throw Error(response.status + ": " + response.statusText);
+    }
+    return response.json();
+  }).then(function (json) {
+    const liveStreams: liveStreamInfo[] = [];
+    for (const stream of json.streams) {
+      if (stream.stream_type === "live") {
+        liveStreams.push({
+          display_name: stream.channel.display_name,
+          game: stream.game,
+          viewers: stream.viewers,
+          status: stream.channel.status,
+          url: stream.channel.url,
+          stream_type: stream.stream_type,
+        } as liveStreamInfo);
+      }
+    }
+    return liveStreams;
+  }).catch(function (exception) {
+    console.log("parsing failed", exception);
+    return [];
+  });
+}
+
+// Get streams specific to channel ids
+async function getTwitchStreamsByIds(
+  appClientID: string,
+  channels: string[],
+): Promise<liveStreamInfo[]> {
   const acceptVersion = "application/vnd.twitchtv.v5+json";
   const ids = await getTwitchIds(appClientID, channels);
   if (ids.length < 1) throw Error("Got no ids!");
@@ -70,9 +148,9 @@ async function getTwitchStreamsByIds(channels: string[]): Promise<liveStreamInfo
           "Content-Type": "application/json",
         },
       }).then(function (response) {
-      if (response.status !== 200) {
-        throw Error(response.status + ": " + response.statusText);
-      }
+        if (response.status !== 200) {
+          throw Error(response.status + ": " + response.statusText);
+        }
         return response.json();
       }).then(function (json) {
         const liveStreams = [];
