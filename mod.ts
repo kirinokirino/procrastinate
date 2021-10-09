@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --no-check --allow-read=.env,.env.defaults,. --allow-net=api.twitch.tv
+#!/usr/bin/env -S deno run --no-check --allow-read --allow-net=api.twitch.tv
 
 import { colors, config, path } from "./deps.ts";
 
